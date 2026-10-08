@@ -1,0 +1,13 @@
+name: tune
+version: 0.1.0
+
+authors:
+  - Adrian Makridenko <adrianmakridenko@duck.com>
+
+targets:
+  tune:
+    main: src/tune.cr
+
+crystal: '>= 1.21.1'
+
+license: GPL-v3
