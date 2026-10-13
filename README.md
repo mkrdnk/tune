@@ -193,6 +193,100 @@ absent, Host is used. Enable this only with external TLS and a proxy that
 overwrites client-supplied `X-Forwarded-Host`, as Via does. For forwarded client
 IPs, Tune uses the rightmost untrusted address in the chain appended by Via.
 
+## Docker Compose: Via + automatic wildcard TLS + Tune
+
+The root `compose.yaml` runs a private Tune Server behind Via 0.4.2 and a Lego
+4.26.0 certificate worker. Use Docker Engine with Compose **2.23.1 or newer** on
+Linux. Tune and the certificate worker build locally; Via uses its published
+image. Only HTTPS port **443** is published. DNS-01 does not require port 80;
+this stack does not provide an HTTP redirect listener.
+
+Point `DOMAIN` and `*.DOMAIN` to your server and allow inbound TCP 443. The ACME
+worker needs outbound HTTPS and DNS access. Choose your DNS provider's identifier
+and credential variables from the [Lego provider list](https://go-acme.github.io/lego/dns/).
+The provider must be supported by the pinned Lego version. The same Compose file
+works with different providers; only the settings and credentials change.
+
+```sh
+cp .env.example .env
+cp dns.env.example dns.env
+chmod 600 .env dns.env
+# Edit .env: TUNE_DOMAIN, ACME_EMAIL, DNS_PROVIDER, ACME_ACCEPT_TOS.
+# Edit dns.env: credentials required by that DNS provider.
+```
+
+Set `ACME_ACCEPT_TOS=true` after reviewing your CA's subscriber agreement.
+`dns.env` is supplied only to the ACME container. It is a Docker environment
+file, not a shell script; use `NAME=value` entries without `export`. Both local
+env files and the authorized-key directory contents are ignored by Git and
+excluded from Docker build contexts.
+
+Generate an identity **on your client** with `tune keygen`, then copy its `.pub`
+contents to `deploy/keys/authorized_keys` on the server (one key per line). Make
+the directory traversable and the public-key file readable by container uid
+10001; do not copy the private key to the server:
+
+```sh
+chmod 755 deploy/keys
+chmod 644 deploy/keys/authorized_keys
+docker compose up -d --build
+docker compose logs -f acme via tune
+```
+
+Tune rejects a missing, empty or malformed authorized-key file. Via waits for
+the first usable certificate before starting; DNS propagation can take minutes.
+If Compose times out waiting, inspect the ACME logs, correct the DNS credentials
+or settings, and run `docker compose up -d` again. Connect from your client:
+
+```sh
+tune localhost:8000 --server https://YOUR-TUNE-DOMAIN --name raspberry
+```
+
+The ACME worker obtains one certificate covering both `DOMAIN` and `*.DOMAIN`.
+It checks renewal every twelve hours using Lego's lifetime-based renewal/ARI
+logic and retries failures after one hour. It validates the certificate and key,
+then atomically deploys a single PEM bundle that Via reloads without restarting.
+A failed renewal preserves the deployed certificate. Monitor ACME logs and
+container health; the ACME health check fails when the deployed certificate has
+less than one day remaining. An unhealthy worker does not stop an already
+running Via container.
+
+The `acme_state` volume stores the ACME account and issued certificates;
+`certificates` stores the restricted PEM copy mounted read-only by Via. Preserve
+and securely back up both volumes across upgrades. `docker compose down` retains
+them; **`docker compose down -v` deletes them**. Do not scale the ACME worker or
+run multiple workers against the same volumes.
+
+The backend uses fixed IPs because Tune trusts individual proxy addresses, not
+CIDRs. If `172.30.80.0/24` overlaps an existing network, set `TUNE_SUBNET`,
+`VIA_IP`, and `TUNE_IP` together in `.env`. Tune's port 8000 is not published.
+The ACME worker has a separate network and cannot connect directly to Tune.
+
+To replace or revoke client keys, update `deploy/keys/authorized_keys`, then:
+
+```sh
+docker compose kill -s SIGHUP tune
+```
+
+The whole key directory is mounted so atomic file replacements are visible.
+On SELinux hosts, label that directory for container access (for example,
+`chcon -Rt container_file_t deploy/keys`).
+
+Test real DNS issuance against Let's Encrypt staging **before** starting the
+production stack. Use a separate project so its untrusted certificates and
+account state cannot replace production data:
+
+```sh
+ACME_DIRECTORY_URL=https://acme-staging-v02.api.letsencrypt.org/directory \
+  docker compose -p tune-staging run --rm --no-deps acme once
+docker compose -p tune-staging down -v
+```
+
+Do not change a running production project's CA URL to staging. Staging
+certificates are not browser-trusted. Changing DNS providers only requires
+editing `DNS_PROVIDER` and `dns.env`, then recreating the worker with
+`docker compose up -d acme`; existing certificates remain valid.
+
 ## Keys and private access
 
 `tune keygen` creates `~/.config/tune/id_ed25519` and its `.pub` file. Existing
@@ -343,3 +437,19 @@ python3 -m venv /tmp/tune-test-env
 Go, Python's cryptography package and Pebble are needed only for this test. Tests
 never request production certificates. See [PROTOCOL.md](PROTOCOL.md) for wire
 format, authentication context and cancellation semantics.
+
+The Compose tests use disposable local certificates and no public DNS or ACME
+account. On Linux with Docker and Compose available:
+
+```sh
+docker build -t tune:test .
+docker build -t tune-acme:test deploy/acme
+docker run --rm --network none --entrypoint sh -i tune-acme:test < scripts/test-acme-deploy.sh
+python3 scripts/test-compose.py
+```
+
+These exercise ACME worker persistence and failure handling, a private WSS
+tunnel through Via, HTTPS hostname routing, and certificate reload with an
+active tunnel. The smoke test publishes a random loopback port, uses the test
+subnet `172.30.81.0/24`, and removes its own containers and volumes afterwards.
+DNS-provider credentials and real issuance are tested separately against staging.
