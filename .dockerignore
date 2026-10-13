@@ -1,0 +1,7 @@
+*
+!Dockerfile
+!shard.yml
+!shard.lock
+!LICENSE
+!src/
+!src/**
