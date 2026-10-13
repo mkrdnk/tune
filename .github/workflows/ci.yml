@@ -1,6 +1,14 @@
 name: CI
 on: [push, pull_request]
 jobs:
+  compose:
+    runs-on: ubuntu-24.04
+    steps:
+      - uses: actions/checkout@v4
+      - run: docker build -t tune:test .
+      - run: docker build -t tune-acme:test deploy/acme
+      - run: docker run --rm --network none --entrypoint sh -i tune-acme:test < scripts/test-acme-deploy.sh
+      - run: python3 scripts/test-compose.py
   crystal:
     strategy:
       matrix:
