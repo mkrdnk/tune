@@ -21,6 +21,8 @@ class TunnelFixture
         context.request.body.try { |body| IO.copy(body, context.response) }
       when "/forwarded"
         context.response.print context.request.headers["X-Forwarded-For"]
+      when "/forwarded-host"
+        context.response.print context.request.headers["X-Forwarded-Host"]
       when "/early"
         context.response.status_code = 413
         context.response.print "rejected"
@@ -70,6 +72,39 @@ class TunnelFixture
 end
 
 describe "HTTP tunnel" do
+  it "routes forwarded hosts only with explicit opt-in and a trusted peer" do
+    fixture = TunnelFixture.new
+    config = fixture.server.config
+    client = HTTP::Client.new("127.0.0.1", fixture.server.port)
+    client.read_timeout = 3.seconds
+    forwarded = HTTP::Headers{"Host" => "127.0.0.1:#{fixture.server.port}", "X-Forwarded-Host" => "#{fixture.hostname}:443"}
+    config.server.trusted_proxies = ["127.0.0.1"]
+    client.get("/forwarded-host", forwarded).status_code.should eq(404)
+    config.server.trust_forwarded_host = true
+    response = client.get("/forwarded-host", forwarded)
+    response.status_code.should eq(200)
+    response.body.should eq("#{fixture.hostname}:443")
+    config.server.trusted_proxies = ["192.0.2.1"]
+    client.get("/forwarded-host", forwarded).status_code.should eq(404)
+    fixture.request("GET", "/forwarded-host", extra: HTTP::Headers{"X-Forwarded-Host" => "forged.example"}).body.should eq(fixture.hostname)
+    config.server.trusted_proxies = ["127.0.0.1"]
+    fixture.request.status_code.should eq(200)
+    %w(a.example,b.example https://a.example a.example/path a.example@b.example).each do |invalid|
+      forwarded["X-Forwarded-Host"] = invalid
+      client.get("/", forwarded).status_code.should eq(400)
+    end
+    forwarded["X-Forwarded-Host"] = fixture.hostname
+    forwarded.add("X-Forwarded-Host", fixture.hostname)
+    client.get("/", forwarded).status_code.should eq(400)
+    forwarded["X-Forwarded-Host"] = config.server.domain
+    client.get("/_tune/connect", forwarded).status_code.should eq(426)
+    forwarded["X-Forwarded-Host"] = fixture.hostname
+    client.get("/_tune/connect", forwarded).body.should eq("GET /_tune/connect")
+  ensure
+    client.try &.close
+    fixture.try &.close
+  end
+
   it "forwards methods, queries, JSON, status and repeated headers" do
     fixture = TunnelFixture.new
     fixture.request("GET", "/?x=%2F&a=2").body.should eq("GET /?x=%2F&a=2")

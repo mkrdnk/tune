@@ -56,7 +56,7 @@ module Tune::Server
       head = HTTPWire.head(io, config.limits.max_header_size)
       raise HTTPWire::Error.new("Server shutting down", 503) if stopped?
       method, path = HTTPWire.request(head)
-      hostname = HTTPWire.hostname(head.headers)
+      hostname = routing_hostname(head.headers, socket.remote_address.address)
       if io.is_a?(OpenSSL::SSL::Socket::Server)
         raise HTTPWire::Error.new("SNI and Host differ", 421) unless io.hostname.try(&.downcase) == hostname
       end
@@ -82,6 +82,18 @@ module Tune::Server
     ensure
       io.try &.close
       @connections.delete(socket)
+    end
+
+    private def routing_hostname(headers : HTTP::Headers, peer : String) : String
+      hostname = HTTPWire.hostname(headers)
+      if config.server.trust_forwarded_host && config.server.trusted_proxies.includes?(peer)
+        if values = headers.get?("X-Forwarded-Host")
+          raise HTTPWire::Error.new("Repeated forwarded host") unless values.size == 1
+          hostname = HTTPWire.hostname(HTTP::Headers{"Host" => values.first})
+          headers["Host"] = values.first
+        end
+      end
+      hostname
     end
 
     private def upgrade(io : IO, head : HTTPWire::Head)

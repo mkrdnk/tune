@@ -13,6 +13,7 @@ module Tune
       property domain : String = ""
       property public_url : String = ""
       property trusted_proxies : Array(String) = [] of String
+      property trust_forwarded_host : Bool = false
       property insecure_local : Bool = false
     end
 
@@ -85,6 +86,9 @@ module Tune
       raise ArgumentError.new("Invalid limits") unless tunnels.max_sessions > 0 && (1..1024).includes?(tunnels.max_streams_per_session) && limits.max_connections > 0 && (1024..16_384).includes?(limits.max_header_size) && limits.max_request_body > 0 && limits.connections_per_minute > 0 && limits.requests_per_second > 0 && limits.bytes_per_second > 0
       tunnels.blocked_names.each { |name| raise ArgumentError.new("Invalid blocked name") unless valid_name?(name) }
       server.trusted_proxies.each { |ip| Socket::IPAddress.new(ip, 0) }
+      if server.trust_forwarded_host && (tls.mode != "external" || server.trusted_proxies.empty?)
+        raise ArgumentError.new("trust_forwarded_host requires external TLS and explicit trusted_proxies")
+      end
       if server.insecure_local
         raise ArgumentError.new("insecure_local requires a loopback bind") unless Socket::IPAddress.new(server.bind, 0).loopback?
         raise ArgumentError.new("insecure_local cannot use ACME") if tls.mode == "acme"

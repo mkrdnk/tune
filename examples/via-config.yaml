@@ -1,0 +1,31 @@
+# Via 0.4.2: https://via.makridenko.com/docs/0.4.2/
+# Use examples/external.yml for Tune and enable these server settings there:
+#   trusted_proxies: ["127.0.0.1"]
+#   trust_forwarded_host: true
+# Via replaces Host and supplies the original value in X-Forwarded-Host.
+#
+# Provision a certificate for tune.example.com AND *.tune.example.com using
+# external ACME tooling with DNS-01. Replace the domain in Tune's config too.
+# This private PEM bundle contains the full chain and matching private key,
+# deployed by Via's certbot-deploy helper and readable by the Via service user.
+# Via 0.4.2 uses one certificate per listener; Tune's built-in ACME is disabled
+# in this deployment. Keep certificate issuance/renewal outside Via and Tune.
+#
+# Validate and run after provisioning the PEM bundle:
+#   via check -c examples/via-config.yaml
+#   via run -c examples/via-config.yaml
+listen: ":443"
+
+tls:
+  cert: /etc/via/tls/tune.example.com/tls.pem
+  key: /etc/via/tls/tune.example.com/tls.pem
+
+timeouts:
+  connect: 10s
+  read: 75s
+  write: 75s
+
+# Omit host: Via's host matching is exact, not wildcard-aware.
+# Tune validates the base domain and routes its registered subdomains.
+# Via streams bodies and handles the control WebSocket Upgrade automatically.
+proxy_pass: http://127.0.0.1:8000

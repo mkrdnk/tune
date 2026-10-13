@@ -156,17 +156,42 @@ tune-server start 8000 --config /etc/tune/server.yml
 ```
 
 `tls.mode: external` is the default. The reverse proxy handles certificates and
-TLS, preserves Host, enables WebSocket Upgrade, disables request/response
-buffering, and uses a timeout longer than the heartbeat interval. Tune's backend
+TLS, preserves the original hostname, enables WebSocket Upgrade, disables
+request/response buffering, and uses a timeout longer than the heartbeat interval. Tune's backend
 listener should remain private. `examples/nginx.conf` is a complete nginx server
 block for an existing base-domain plus wildcard certificate.
+
+For Via 0.4.2 use [`examples/via-config.yaml`](examples/via-config.yaml).
+Via replaces `Host` with the backend address and sends the original value in
+`X-Forwarded-Host`. In Tune's `examples/external.yml` configuration, set
+`server.trust_forwarded_host: true` and list only Via's backend source addresses
+in `server.trusted_proxies` (for this example, `["127.0.0.1"]`). Via forwards
+WebSocket upgrades and streams bodies automatically. Its route host matching is
+exact, so the example forwards all hosts to Tune for domain validation/routing.
+
+Via 0.4.2 uses one certificate per listener. Provision a certificate covering
+both the base domain and `*.DOMAIN` with external DNS-01 ACME tooling, then deploy
+the full chain and key to the PEM path in the example. Renew it externally;
+Via watches the certificate files for reload. This deployment uses external TLS,
+so Tune does not issue individual certificates. See the
+[Via TLS documentation](https://via.makridenko.com/docs/0.4.2/tls/).
+
+```sh
+via check -c examples/via-config.yaml
+via run -c examples/via-config.yaml
+```
 
 List only actual proxy addresses in `server.trusted_proxies`. This setting
 accepts individual IP addresses, not CIDRs. Tune removes untrusted forwarded
 headers. From a listed proxy, it validates X-Forwarded-For and takes the rightmost
 untrusted address; X-Forwarded-Proto must be exactly `http` or `https`. Routing
-always uses Host, never X-Forwarded-Host. Ensure your outermost proxy overwrites
-client-supplied forwarding headers, as the nginx example does.
+uses `Host` by default. The explicit `server.trust_forwarded_host` option allows
+a single valid `X-Forwarded-Host` from a listed proxy to select the control or
+tunnel hostname; untrusted peers cannot override Host. Duplicate or malformed
+forwarded hosts from trusted proxies are rejected with 400. When the header is
+absent, Host is used. Enable this only with external TLS and a proxy that
+overwrites client-supplied `X-Forwarded-Host`, as Via does. For forwarded client
+IPs, Tune uses the rightmost untrusted address in the chain appended by Via.
 
 ## Keys and private access
 
@@ -208,6 +233,7 @@ keys and invalid values fail startup. `start PORT` always sets the listener port
 | `server.domain` | required | Base domain/control hostname, at most 180 bytes |
 | `server.public_url` | `https://DOMAIN` | External origin; must use the base domain |
 | `server.trusted_proxies` | `[]` | Individual trusted forwarding-proxy IPs |
+| `server.trust_forwarded_host` | `false` | Accept X-Forwarded-Host for routing only from trusted proxies; requires external TLS |
 | `server.insecure_local` | `false` | Allow loopback-only development HTTP |
 | `auth.mode` | `private` | `private` or explicitly enabled `public` |
 | `auth.authorized_keys` | `/etc/tune/authorized_keys` | Private-mode key file |
