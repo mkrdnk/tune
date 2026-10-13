@@ -1,6 +1,3 @@
-# TODO: Write documentation for `Tune`
-module Tune
-  VERSION = "0.1.0"
+require "./tune/library"
 
-  # TODO: Put your code here
-end
+exit Tune::Client::CLI.run(ARGV)

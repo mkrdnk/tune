@@ -7,7 +7,9 @@ authors:
 targets:
   tune:
     main: src/tune.cr
+  tune-server:
+    main: src/tune_server.cr
 
 crystal: '>= 1.21.1'
 
-license: GPL-v3
+license: GPL-3.0-only
