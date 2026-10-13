@@ -1,0 +1,103 @@
+# Docker Compose >= 2.23.1 (inline configs).
+services:
+  tune:
+    build: .
+    restart: unless-stopped
+    command: [start, "8000", --config, /etc/tune/server.yml]
+    configs:
+      - source: tune
+        target: /etc/tune/server.yml
+    volumes:
+      - type: bind
+        source: ./deploy/keys
+        target: /etc/tune/keys
+        read_only: true
+        bind:
+          create_host_path: false
+    networks:
+      backend:
+        ipv4_address: ${TUNE_IP:-172.30.80.3}
+    cap_drop: [ALL]
+    security_opt: [no-new-privileges:true]
+    stop_grace_period: 15s
+
+  via:
+    image: ghcr.io/mkrdnk/via:0.4.2
+    restart: unless-stopped
+    command: [run, -c, /etc/via/config.yaml]
+    ports:
+      - "443:8443"
+    configs:
+      - source: via
+        target: /etc/via/config.yaml
+    volumes:
+      - certificates:/etc/via/tls:ro
+    networks:
+      backend:
+        ipv4_address: ${VIA_IP:-172.30.80.2}
+    depends_on:
+      tune:
+        condition: service_started
+      acme:
+        condition: service_healthy
+    cap_drop: [ALL]
+    security_opt: [no-new-privileges:true]
+
+  acme:
+    build: ./deploy/acme
+    restart: unless-stopped
+    env_file: ./dns.env
+    environment:
+      TUNE_DOMAIN: ${TUNE_DOMAIN:?Set TUNE_DOMAIN in .env}
+      ACME_EMAIL: ${ACME_EMAIL:?Set ACME_EMAIL in .env}
+      DNS_PROVIDER: ${DNS_PROVIDER:?Set DNS_PROVIDER in .env}
+      ACME_ACCEPT_TOS: ${ACME_ACCEPT_TOS:-false}
+      ACME_DIRECTORY_URL: ${ACME_DIRECTORY_URL:-https://acme-v02.api.letsencrypt.org/directory}
+    volumes:
+      - acme_state:/var/lib/acme
+      - certificates:/certificates
+    networks: [acme]
+    healthcheck:
+      test: [CMD, /usr/local/bin/acme-loop, health]
+      interval: 10s
+      timeout: 5s
+      start_period: 20m
+      retries: 3
+    stop_grace_period: 30s
+
+configs:
+  tune:
+    content: |
+      server:
+        bind: "0.0.0.0"
+        port: 8000
+        domain: "${TUNE_DOMAIN:?Set TUNE_DOMAIN in .env}"
+        trusted_proxies: ["${VIA_IP:-172.30.80.2}"]
+        trust_forwarded_host: true
+      auth:
+        mode: private
+        authorized_keys: /etc/tune/keys/authorized_keys
+      tls:
+        mode: external
+  via:
+    content: |
+      listen: ":8443"
+      tls:
+        cert: /etc/via/tls/${TUNE_DOMAIN:?Set TUNE_DOMAIN in .env}/tls.pem
+        key: /etc/via/tls/${TUNE_DOMAIN:?Set TUNE_DOMAIN in .env}/tls.pem
+      timeouts:
+        connect: 10s
+        read: 75s
+        write: 75s
+      proxy_pass: http://${TUNE_IP:-172.30.80.3}:8000
+
+networks:
+  backend:
+    ipam:
+      config:
+        - subnet: ${TUNE_SUBNET:-172.30.80.0/24}
+  acme: {}
+
+volumes:
+  acme_state:
+  certificates:

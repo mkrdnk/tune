@@ -5,3 +5,7 @@
 *.dwarf
 __pycache__/
 *.pyc
+/.env
+/dns.env
+/deploy/keys/*
+!/deploy/keys/.gitkeep
