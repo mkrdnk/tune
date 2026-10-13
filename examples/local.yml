@@ -1,0 +1,10 @@
+server:
+  bind: "127.0.0.1"
+  port: 9000
+  domain: "localhost"
+  public_url: "http://localhost:9000"
+  insecure_local: true
+auth:
+  mode: public
+tls:
+  mode: external

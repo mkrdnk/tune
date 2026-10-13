@@ -1,0 +1,24 @@
+server:
+  bind: "0.0.0.0"
+  port: 443
+  domain: "tune.example.com"
+  public_url: "https://tune.example.com"
+auth:
+  mode: public
+  allow_anonymous: true
+tls:
+  mode: acme
+  acme:
+    terms_agreed: false
+    data_dir: "/var/lib/tune/acme"
+    max_new_certificates_per_day: 10
+tunnels:
+  max_sessions: 20
+  max_streams_per_session: 16
+  blocked_names: []
+limits:
+  max_connections: 128
+  max_request_body: 104857600
+  connections_per_minute: 30
+  requests_per_second: 60
+  bytes_per_second: 10485760

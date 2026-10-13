@@ -3,3 +3,5 @@
 /bin/
 /.shards/
 *.dwarf
+__pycache__/
+*.pyc

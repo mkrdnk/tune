@@ -1,0 +1,27 @@
+[Unit]
+Description=Tune HTTP tunnel server
+Wants=network-online.target
+After=network-online.target
+
+[Service]
+Type=simple
+User=tune
+Group=tune
+ExecStart=/usr/local/bin/tune-server start 443 --config /etc/tune/server.yml
+ExecReload=/bin/kill -HUP $MAINPID
+Restart=on-failure
+RestartSec=5
+TimeoutStopSec=15
+StateDirectory=tune
+StateDirectoryMode=0700
+UMask=0077
+AmbientCapabilities=CAP_NET_BIND_SERVICE
+CapabilityBoundingSet=CAP_NET_BIND_SERVICE
+NoNewPrivileges=true
+PrivateTmp=true
+ProtectSystem=strict
+ProtectHome=true
+RestrictAddressFamilies=AF_INET AF_INET6 AF_UNIX
+
+[Install]
+WantedBy=multi-user.target

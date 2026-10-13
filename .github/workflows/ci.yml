@@ -1,0 +1,30 @@
+name: CI
+on: [push, pull_request]
+jobs:
+  crystal:
+    strategy:
+      matrix:
+        os: [ubuntu-24.04, ubuntu-24.04-arm]
+    runs-on: ${{ matrix.os }}
+    steps:
+      - uses: actions/checkout@v4
+      - uses: crystal-lang/install-crystal@v1
+        with:
+          crystal: 1.21.1
+      - run: crystal tool format --check
+      - run: crystal spec
+      - run: shards build --release
+      - run: python3 scripts/test-process.py
+  acme:
+    runs-on: ubuntu-24.04
+    steps:
+      - uses: actions/checkout@v4
+      - uses: crystal-lang/install-crystal@v1
+        with:
+          crystal: 1.21.1
+      - uses: actions/setup-go@v5
+        with:
+          go-version: '1.24.x'
+      - run: go install github.com/letsencrypt/pebble/v2/cmd/pebble@v2.10.1
+      - run: python3 -m venv /tmp/tune-test-env && /tmp/tune-test-env/bin/pip install cryptography
+      - run: /tmp/tune-test-env/bin/python scripts/test-acme.py --pebble "$HOME/go/bin/pebble"

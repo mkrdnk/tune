@@ -1,0 +1,32 @@
+server:
+  bind: "0.0.0.0"
+  port: 443
+  domain: "tune.example.com"
+  public_url: "https://tune.example.com"
+
+auth:
+  mode: private
+  authorized_keys: "/etc/tune/authorized_keys"
+
+tls:
+  mode: acme
+  acme:
+    email: "admin@example.com"
+    # Set true after reviewing your CA's subscriber agreement.
+    terms_agreed: false
+    data_dir: "/var/lib/tune/acme"
+    http_port: 80
+    max_pending_orders: 16
+    max_new_certificates_per_day: 10
+
+tunnels:
+  max_sessions: 100
+  max_streams_per_session: 32
+
+limits:
+  max_connections: 512
+  max_header_size: 16384
+  max_request_body: 104857600
+
+logging:
+  level: info
